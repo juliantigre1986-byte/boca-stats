@@ -1,5 +1,3 @@
-
-}
 import { useState, useEffect } from 'react'
 
 const SHEET_ID = '1vjsjvCQF005MzI9uZ4Sh9_xsVS4Cp2w_EmY8kptlGoM'
