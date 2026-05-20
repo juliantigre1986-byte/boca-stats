@@ -14,12 +14,22 @@ async function fetchSheet(range) {
 }
 
 function toMin(t) {
+  // Format from Sheets is MM:SS (e.g. "40:00" = 40 minutes)
   if (!t || t === '') return 0
   const s = String(t).trim()
   if (s.includes(':')) {
     const p = s.split(':')
-    if (p.length === 3) return +p[0]*60 + +p[1] + +p[2]/60
-    if (p.length === 2) return +p[0]*60 + +p[1]
+    if (p.length === 3) {
+      // HH:MM:SS — treat as hours:minutes:seconds
+      const h = +p[0], m = +p[1], sec = +p[2]
+      // If hours > 2, likely MM:SS:MS format — treat first as minutes
+      if (h > 2) return h + m/60
+      return h*60 + m + sec/60
+    }
+    if (p.length === 2) {
+      // MM:SS — first part is minutes
+      return +p[0] + +p[1]/60
+    }
   }
   const n = parseFloat(s)
   if (!isNaN(n) && n > 0 && n < 1) return n * 24 * 60
