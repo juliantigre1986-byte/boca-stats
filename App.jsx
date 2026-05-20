@@ -72,15 +72,23 @@ export default function App() {
         const [partidos,minutos,goles] = await Promise.all([fetchSheet('Partidos!A:U'),fetchSheet('Minutos!A:Z'),fetchSheet('Goles!A:AB')])
         const p26=partidos.filter(r=>r['Partido']?.startsWith(YEAR))
         const m26=minutos.filter(r=>r['Partido']?.startsWith(YEAR)&&r['Presencia']==='Jugado')
+        const allM26=minutos.filter(r=>r['Partido']?.startsWith(YEAR))
         const g26=goles.filter(r=>r['Partido']?.startsWith(YEAR))
 
+        // Include ALL rows (Jugado + Convocado) for full player tracking
         const map={}
-        for(const r of m26){
+        for(const r of allM26){
           const n=r['Apellido y Nombre']?.trim(); if(!n) continue
-          if(!map[n]) map[n]={name:n,pj:0,min:0,frec:0,fcom:0,ama:0,roja:0,partidos:[]}
-          map[n].pj++; map[n].min+=toMin(r['Minutos_Total']); map[n].frec+=+r['F. Recibidos']||0
-          map[n].fcom+=+r['F. Cometidos']||0; map[n].ama+=+r['Ama']||0; map[n].roja+=+r['Roja']||0
-          map[n].partidos.push(r['Partido'])
+          const jugado=r['Presencia']==='Jugado'
+          if(!map[n]) map[n]={name:n,pj:0,convocado:0,min:0,frec:0,fcom:0,ama:0,roja:0,partidos:[],partidosConv:[]}
+          if(jugado){
+            map[n].pj++; map[n].min+=toMin(r['Minutos_Total']); map[n].frec+=+r['F. Recibidos']||0
+            map[n].fcom+=+r['F. Cometidos']||0; map[n].ama+=+r['Ama']||0; map[n].roja+=+r['Roja']||0
+            map[n].partidos.push(r['Partido'])
+          } else {
+            map[n].convocado++
+            map[n].partidosConv.push(r['Partido'])
+          }
         }
 
         const golesConv={},golesRecib={},assists={},golsByPartido={},golsByPlayer={}
@@ -106,7 +114,7 @@ export default function App() {
 
         const lastMatch=p26[p26.length-1]||{}, lastPid=lastMatch['Partido']||''
         const lastPlayers=m26.filter(r=>r['Partido']===lastPid)
-          .map(r=>({name:r['Apellido y Nombre']?.trim(),min:+toMin(r['Minutos_Total']).toFixed(0),
+          .map(r=>({name:r['Apellido y Nombre']?.trim(),min:+toMin(r["Minutos_Total"]).toFixed(1),
             goles:+r['Goles']||0,asist:+r['Asistencia']||0,fcom:+r['F. Cometidos']||0,isGK:!!golesRecib[r['Apellido y Nombre']?.trim()]}))
           .sort((a,b)=>b.min-a.min)
 
@@ -123,7 +131,7 @@ export default function App() {
         const totRecib=Object.values(golesRecib).reduce((a,b)=>a+b,0)
         const totAsist=Object.values(assists).reduce((a,b)=>a+b,0)
 
-        setData({players,goalsFeed,lastPlayers,lastMatch,partidos:p26,m26,
+        setData({players,goalsFeed,lastPlayers,lastMatch,partidos:p26,m26,allM26,
           nPartidos:p26.length,totConv,totRecib,totAsist,wins,draws,losses,
           golesConv,golesRecib,assists,golsByPartido})
       } catch(e){setError(e.message)} finally{setLoading(false)}
@@ -266,7 +274,7 @@ function DetallePartidoScreen({partido,data}){
   const pid=partido['Partido'], gb=data.golsByPartido[pid]||{conv:[],recib:[]}
   const resultado=partido['Resultado']||'', res=`${partido['Gol Boca']||0}-${partido['Gol Rival']||0}`
   const jugadores=data.m26.filter(r=>r['Partido']===pid)
-    .map(r=>({name:r['Apellido y Nombre']?.trim(),min:+toMin(r['Minutos_Total']).toFixed(0),
+    .map(r=>({name:r['Apellido y Nombre']?.trim(),min:+toMin(r["Minutos_Total"]).toFixed(1),
       fcom:+r['F. Cometidos']||0,frec:+r['F. Recibidos']||0,ama:+r['Ama']||0,
       isGK:!!data.golesRecib[r['Apellido y Nombre']?.trim()]})).sort((a,b)=>b.min-a.min)
   const maxMin=Math.max(...jugadores.map(j=>j.min),1)
@@ -393,7 +401,7 @@ function StatsScreen({data,tab,setTab,setSelPlayer,setScreen}){
             <div key={p.name} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 0',borderBottom:i<players.length-1?'0.5px solid #DDE3EE':'none',cursor:'pointer'}} onClick={()=>click(p)}>
               <div style={{fontSize:12,fontWeight:600,color:'#1A1A2E',width:100,flexShrink:0}}>{p.name?.split(' ').slice(0,2).join(' ')}{p.golesRecib!=null&&<span style={{fontSize:10,color:'#888',marginLeft:3}}>(arq.)</span>}</div>
               <div style={{flex:1,height:5,background:'#DDE3EE',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.round(p.min/maxTotal*100)}%`,background:p.golesRecib!=null?'#FFC300':'#001E62',borderRadius:3}}/></div>
-              <span style={{fontSize:12,fontWeight:600,minWidth:45,textAlign:'right'}}>{p.min.toFixed(0)} min</span>
+              <span style={{fontSize:12,fontWeight:600,minWidth:45,textAlign:'right'}}>{p.min.toFixed(1)} min</span>
             </div>
           ))}
         </div>
@@ -474,7 +482,7 @@ function PerfilScreen({player,data}){
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
         {[
-          [player.pj,'Partidos'],[player.min.toFixed(0)+"'",'Min. Tot.'],[player.prom.toFixed(1),'Prom/PJ'],
+          [player.pj,'Partidos'],[player.min.toFixed(1)+"'",'Min. Tot.'],[player.prom.toFixed(1),'Prom/PJ'],
           ...(!isGK?[[player.golesConv,'Goles'],[player.asistencias,'Asist.']]
                    :[[player.golesRecib,'G. Recib.']]),
           [player.fcom,'F. Com.'],[player.frec,'F. Rec.'],[player.ama,'Amarillas'],
@@ -485,22 +493,52 @@ function PerfilScreen({player,data}){
           </div>
         ))}
       </div>
-      <Sec>Partidos jugados ({player.pj})</Sec>
-      <div style={{background:'#fff',borderRadius:12,border:'0.5px solid #DDE3EE',overflow:'hidden',marginBottom:16}}>
+      <Sec>Partidos jugados ({player.pj}) · No disponibles ({player.convocado||0})</Sec>
+      <div style={{background:'#fff',borderRadius:12,border:'0.5px solid #DDE3EE',overflow:'hidden',marginBottom:12}}>
         {player.partidos?.map((pid,i,arr)=>{
           const p=data.partidos.find(p=>p['Partido']===pid)
           const goles=player.golsByMatch?.[pid]||0
           if(!p) return null
           const resultado=p['Resultado']||''
+          const rowM=data.allM26?.find(r=>r['Partido']===pid&&r['Apellido y Nombre']?.trim()===player.name)
+          const minJug=rowM?+toMin(rowM['Minutos_Total']).toFixed(1):0
+          const fc=rowM?+rowM['F. Cometidos']||0:0
+          const fr=rowM?+rowM['F. Recibidos']||0:0
+          const ama=rowM?+rowM['Ama']||0:0
           return (
-            <div key={pid} style={{padding:'10px 14px',display:'flex',alignItems:'center',gap:10,borderBottom:i<arr.length-1?'0.5px solid #DDE3EE':'none'}}>
-              <Pill bg={resultado==='Ganado'?'#EAF3DE':resultado==='Perdido'?'#FCEBEB':'#FAEEDA'} color={resultado==='Ganado'?'#3B6D11':resultado==='Perdido'?'#A32D2D':'#854F0B'} style={{fontSize:10}}>{resultado[0]}</Pill>
-              <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:'#1A1A2E'}}>vs {p['Rival']}</div><div style={{fontSize:11,color:'#888'}}>{p['Fecha']}</div></div>
-              {goles>0&&<span style={{fontSize:11,color:'#0F6E56',fontWeight:700}}>⚽ {goles}</span>}
+            <div key={pid} style={{padding:'10px 14px',borderBottom:i<arr.length-1?'0.5px solid #DDE3EE':'none'}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                <Pill bg={resultado==='Ganado'?'#EAF3DE':resultado==='Perdido'?'#FCEBEB':'#FAEEDA'} color={resultado==='Ganado'?'#3B6D11':resultado==='Perdido'?'#A32D2D':'#854F0B'} style={{fontSize:10}}>{resultado[0]}</Pill>
+                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:'#1A1A2E'}}>vs {p['Rival']}</div><div style={{fontSize:11,color:'#888'}}>{p['Fecha']}</div></div>
+                {goles>0&&<span style={{fontSize:11,color:'#0F6E56',fontWeight:700}}>⚽ {goles}</span>}
+              </div>
+              <div style={{display:'flex',gap:12,fontSize:11,color:'#888',paddingLeft:4}}>
+                <span>⏱ {minJug} min</span>
+                {fc>0&&<span style={{color:'#C0392B'}}>FC: {fc}</span>}
+                {fr>0&&<span style={{color:'#1A5276'}}>FR: {fr}</span>}
+                {ama>0&&<span style={{color:'#BA7517'}}>🟨 {ama}</span>}
+              </div>
             </div>
           )
         })}
       </div>
+      {player.partidosConv?.length>0&&<>
+        <Sec>No disponibles ({player.partidosConv.length})</Sec>
+        <div style={{background:'#fff',borderRadius:12,border:'0.5px solid #DDE3EE',overflow:'hidden',marginBottom:16}}>
+          {player.partidosConv?.map((pid,i,arr)=>{
+            const p=data.partidos.find(p=>p['Partido']===pid)
+            if(!p) return null
+            const resultado=p['Resultado']||''
+            return (
+              <div key={pid} style={{padding:'10px 14px',display:'flex',alignItems:'center',gap:8,borderBottom:i<arr.length-1?'0.5px solid #DDE3EE':'none',opacity:0.6}}>
+                <Pill bg='#F0F2F5' color='#888' style={{fontSize:10}}>–</Pill>
+                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:'#888'}}>vs {p['Rival']}</div><div style={{fontSize:11,color:'#aaa'}}>{p['Fecha']}</div></div>
+                <span style={{fontSize:10,color:'#888'}}>No disponible</span>
+              </div>
+            )
+          })}
+        </div>
+      </>}
       <button onClick={downloadPDF} style={{width:'100%',padding:14,background:'#001E62',color:'#FFC300',border:'none',borderRadius:10,fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:'Inter,sans-serif',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
         <i className="ti ti-download"/> Descargar ficha PDF
       </button>
