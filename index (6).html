@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="theme-color" content="#000B2E"/>
+  <title>Boca · Partido</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#000B2E;min-height:100vh;-webkit-tap-highlight-color:transparent}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    @keyframes rotRed{0%,100%{box-shadow:0 0 6px rgba(255,75,75,.5)}50%{box-shadow:0 0 16px rgba(255,75,75,.9)}}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script type="text/babel">
+  const { useState, useEffect, useRef } = React;
+  const HALF_SECS = 20 * 60;
+
+  const ROSTER = [
+    { id:1,  n:1,  s:"Arce",       full:"Arce Tobias",                  isGK:true  },
+    { id:2,  n:4,  s:"Escobar",    full:"Tobias Escobar"                            },
+    { id:3,  n:5,  s:"Taliercio",  full:"Taliercio Francisco Ezequiel"              },
+    { id:4,  n:6,  s:"Menzeguez",  full:"Menzeguez Gerado Ariel"                    },
+    { id:5,  n:7,  s:"Suárez",     full:"Lucas Suarez"                              },
+    { id:6,  n:8,  s:"Barrientos", full:"Barrientos Nelson Gabriel"                 },
+    { id:7,  n:9,  s:"Bonino",     full:"Bonino Matias"                             },
+    { id:8,  n:10, s:"Ramírez",    full:"Ramirez Ezequiel Nicolas"                  },
+    { id:9,  n:11, s:"Alvarez",    full:"Alvarez Rodrigo"                           },
+    { id:10, n:12, s:"Leguizamón", full:"Leguizamon Nicolas Sebastian"              },
+    { id:11, n:14, s:"Corvalán",   full:"Corvalan Emanuel Octavio"                  },
+    { id:12, n:16, s:"Biurrarena", full:"Biurrarena Angel Laureano",    isGK:true   },
+    { id:13, n:17, s:"Fernández",  full:"Fernandez Diego Ezequiel"                  },
+    { id:14, n:20, s:"Russo",      full:"Russo Barberia Facundo Martin"             },
+    { id:15, n:21, s:"Gheneloff",  full:"Julian Gheneloff Andina"                   },
+    { id:16, n:23, s:"Baigorria",  full:"Juan Baigorria"                            },
+    { id:17, n:15, s:"Starna",     full:"Gonzalo Starna",               isGK:true   },
+    { id:18, n:3,  s:"Caballero",  full:"Caballero Esteban"                         },
+  ];
+
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzquRBr5urxAhS8xtI-TOZUQ_3PTmEMR_9-MMWa94nDROFADvzaZ3gfZI67d45q2qi_/exec";
+
+  const fmt = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+  const fmtMin = s => { if(s<=0)return"0'"; const m=Math.floor(s/60),sc=s%60; return sc>0?`${m}'${String(sc).padStart(2,"0")}"`:m+"'"; };
+  const F = "'Oswald','Arial Narrow',sans-serif";
+
+  const C = {
+    root:{ minHeight:"100vh", background:"linear-gradient(180deg,#001247 0%,#000B2E 100%)", color:"#fff", fontFamily:F, paddingBottom:60 },
+    header:{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 16px 10px", borderBottom:"1px solid #0f1e5e" },
+    badge:{ fontSize:11, fontWeight:700, letterSpacing:2, color:"#FFD700", textTransform:"uppercase" },
+    iconBtn:{ background:"transparent", border:"1px solid #1a2a6e", color:"#aaa", borderRadius:8, padding:"5px 10px", cursor:"pointer", fontSize:15, fontFamily:F },
+    timerBlock:{ display:"flex", flexDirection:"column", alignItems:"center", padding:"12px 16px 8px", gap:8 },
+    timerRow:{ display:"flex", alignItems:"center", gap:10 },
+    timerDisplay:{ fontSize:72, fontWeight:800, letterSpacing:4, lineHeight:1, fontVariantNumeric:"tabular-nums", transition:"color .3s", fontFamily:F },
+    editBtn:{ background:"transparent", border:"1px solid #1a2a6e", color:"#555", borderRadius:8, padding:"5px 8px", cursor:"pointer", fontSize:14, fontFamily:F },
+    playBtn:{ borderRadius:12, border:"none", color:"#fff", fontWeight:700, fontSize:17, padding:"12px 44px", cursor:"pointer", letterSpacing:1, fontFamily:F },
+    scoreRow:{ display:"flex", alignItems:"flex-end", justifyContent:"center", gap:12, padding:"7px 12px 9px", borderTop:"1px solid #0f1e5e", borderBottom:"1px solid #0f1e5e", background:"rgba(255,215,0,.04)" },
+    scoreTeam:{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, flex:1 },
+    teamLbl:{ fontSize:10, letterSpacing:1, color:"#888", fontWeight:600, textAlign:"center" },
+    scoreCtrl:{ display:"flex", alignItems:"center", gap:8 },
+    scoreBtn:{ width:34, height:34, borderRadius:8, border:"1px solid #FFD700", background:"transparent", color:"#FFD700", fontSize:22, cursor:"pointer", fontFamily:F, lineHeight:1 },
+    scoreNum:{ fontSize:46, fontWeight:800, minWidth:38, textAlign:"center", fontFamily:F },
+    eventsGrid:{ display:"grid", gridTemplateColumns:"1fr 1px 1fr", borderBottom:"1px solid #0f1e5e" },
+    rivalGrid:{ display:"grid", gridTemplateColumns:"1fr 1px 1fr", borderBottom:"1px solid #0f1e5e", background:"rgba(255,75,75,.04)" },
+    evDiv:{ background:"#0f1e5e" },
+    evItem:{ display:"flex", flexDirection:"column", alignItems:"center", gap:2, padding:"6px 4px" },
+    evLbl:{ fontSize:9, color:"#888", letterSpacing:1, textTransform:"uppercase", textAlign:"center" },
+    evCtrl:{ display:"flex", alignItems:"center", gap:6 },
+    evBtn:{ width:26, height:26, borderRadius:6, border:"1px solid #1a2a6e", background:"transparent", color:"#fff", fontSize:16, cursor:"pointer", fontFamily:F, lineHeight:1 },
+    evNum:{ fontSize:22, fontWeight:800, minWidth:24, textAlign:"center", fontFamily:F },
+    secLabel:{ fontSize:10, letterSpacing:2, color:"#FFD700", padding:"7px 16px 3px", fontWeight:700, textTransform:"uppercase" },
+    fieldGrid:{ display:"flex", gap:5, padding:"3px 10px 6px" },
+    fieldCard:{ flex:1, background:"#0D2280", borderRadius:10, padding:"7px 2px 5px", display:"flex", flexDirection:"column", alignItems:"center", gap:2, cursor:"pointer", border:"1px solid #1a3aaa", position:"relative", minHeight:68, transition:"border .2s" },
+    fieldCardSub:{ background:"#6b0f0f", border:"2px solid #FF4B4B !important" },
+    gkBadge:{ position:"absolute", top:3, right:3, fontSize:7, background:"#FFD700", color:"#000", borderRadius:3, padding:"1px 3px", fontWeight:800 },
+    pName:{ fontSize:10, fontWeight:700, textAlign:"center", lineHeight:1.2 },
+    pMins:{ fontSize:11, color:"#FFD700", fontWeight:700 },
+    stintBadge:{ fontSize:8, fontWeight:700, borderRadius:3, padding:"1px 4px" },
+    statBubble:{ fontSize:8, background:"#1a3aaa", borderRadius:3, padding:"1px 3px", color:"#fff" },
+    benchGrid:{ display:"flex", flexWrap:"wrap", gap:5, padding:"3px 16px" },
+    benchCard:{ flex:"0 0 auto", background:"#060f33", borderRadius:8, padding:"5px 9px", display:"flex", alignItems:"center", gap:3, border:"1px solid #0f1e5e", cursor:"default" },
+    benchActive:{ cursor:"pointer", border:"1px solid #00C16A", background:"#071f14" },
+    benchName:{ fontSize:12, fontWeight:600 },
+    benchMins:{ fontSize:9, color:"#FFD700", marginLeft:2 },
+    rosterGrid:{ display:"flex", flexWrap:"wrap", gap:7, padding:"8px 16px" },
+    rCard:{ flex:"1 1 calc(25% - 7px)", minWidth:68, background:"#060f33", borderRadius:8, padding:"10px 4px", display:"flex", flexDirection:"column", alignItems:"center", gap:2, cursor:"pointer", border:"1px solid #0f1e5e", position:"relative" },
+    rCardSel:{ background:"#0D2280", border:"2px solid #FFD700" },
+    btnPrimary:{ background:"#FFD700", color:"#000", border:"none", borderRadius:10, padding:"12px 20px", fontSize:15, fontWeight:800, cursor:"pointer", letterSpacing:1, fontFamily:F },
+    btnGhost:{ background:"transparent", color:"#FFD700", border:"1px solid #FFD700", borderRadius:10, padding:"10px 20px", fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:F },
+    overlay:{ position:"fixed", inset:0, background:"rgba(0,0,0,.92)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:20 },
+    modal:{ background:"#001247", borderRadius:16, padding:"20px 16px", width:"100%", maxWidth:340, display:"flex", flexDirection:"column", alignItems:"center", gap:10, border:"1px solid #1a3aaa" },
+    modalScore:{ fontSize:36, fontWeight:800, fontFamily:F, textAlign:"center", lineHeight:1.2 },
+  };
+
+  function App() {
+    const [phase, setPhase] = useState("setup");
+    const [half, setHalf] = useState(1);
+    const [rival, setRival] = useState("Rival");
+    const [matchMeta, setMatchMeta] = useState({torneo:"Regular",instancia:"",condicion:"Local",cancha:""});
+    const [timeLeft, setTimeLeft] = useState(HALF_SECS);
+    const [running, setRunning] = useState(false);
+    const [onField, setOnField] = useState([]);
+    const [minutes, setMinutes] = useState({});
+    const [stintMin, setStintMin] = useState({});
+    const [entryTime, setEntryTime] = useState({});
+    const [stintEntry, setStintEntry] = useState({});
+    const [goalLog, setGoalLog] = useState([]);
+    const [foulLog, setFoulLog] = useState([]);
+    const [cardLog, setCardLog] = useState([]);
+    const [rivalGoals, setRivalGoals] = useState(0);
+    const [rivalCards, setRivalCards] = useState({yel:0, red:0});
+    const [modal, setModal] = useState(null);
+    const [subOutId, setSubOutId] = useState(null);
+    const [stintLog, setStintLog] = useState([]); // [{pid,full,enteredAt,exitedAt,half}]
+
+    const runRef=useRef(false); runRef.current=running;
+    const onFieldRef=useRef([]); onFieldRef.current=onField;
+    const entryRef=useRef({}); entryRef.current=entryTime;
+    const minsRef=useRef({}); minsRef.current=minutes;
+    const stintRef=useRef({}); stintRef.current=stintMin;
+    const stintEntryRef=useRef({}); stintEntryRef.current=stintEntry;
+
+    const tlRef=useRef(HALF_SECS); tlRef.current=timeLeft;
+    const stintLogRef=useRef([]); stintLogRef.current=stintLog;
+    const halfRef=useRef(1); halfRef.current=half;
+
+    // ── AUTO-SAVE cada 30s ────────────────────────────────
+    useEffect(()=>{
+      const save=()=>{
+        try {
+          const state={phase,half,rival,matchMeta,timeLeft:tlRef.current,
+            onField:onFieldRef.current,minutes:minsRef.current,stintMin:stintRef.current,
+            entryTime:entryRef.current,stintEntry:stintEntryRef.current,goalLog,foulLog,cardLog,rivalGoals,rivalCards,stintLog};
+          localStorage.setItem('bocaMatch',JSON.stringify(state));
+        } catch(e){}
+      };
+      const id=setInterval(save,30000);
+      save(); // save immediately on any state change
+      return()=>clearInterval(id);
+    },[phase,half,rival,matchMeta,timeLeft,onField,minutes,stintMin,entryTime,goalLog,foulLog,cardLog,rivalGoals,stintLog]);
+
+    // ── RESTORE al montar ─────────────────────────────────
+    useEffect(()=>{
+      try {
+        const raw=localStorage.getItem('bocaMatch');
+        if(!raw) return;
+        const s=JSON.parse(raw);
+        if(s.phase&&s.phase!=='setup'){
+          if(window.confirm('¿Retomar el partido anterior?')){
+            setPhase(s.phase); setHalf(s.half||1); setRival(s.rival||'Rival');
+            setMatchMeta(s.matchMeta||{torneo:'Regular',instancia:'',condicion:'Local',cancha:''});
+            setTimeLeft(s.timeLeft||HALF_SECS); setOnField(s.onField||[]);
+            setMinutes(s.minutes||{}); setStintMin(s.stintMin||{}); setEntryTime(s.entryTime||{});
+            setGoalLog(s.goalLog||[]); setFoulLog(s.foulLog||[]);
+            setCardLog(s.cardLog||[]); setRivalGoals(s.rivalGoals||0); setRivalCards(s.rivalCards||{yel:0,red:0}); setStintEntry(s.stintEntry||{});
+            setStintLog(s.stintLog||[]);
+          }
+        }
+      } catch(e){}
+    },[]);
+
+    useEffect(()=>{ if(!running)return; const id=setInterval(()=>setTimeLeft(t=>Math.max(0,t-1)),1000); return()=>clearInterval(id); },[running]);
+    useEffect(()=>{ if(timeLeft===0&&runRef.current){ flush(0); setRunning(false); setPhase(half===1?"halftime":"done"); } },[timeLeft]);
+
+    const elapsed = tl => HALF_SECS - tl; // segundos transcurridos en el tiempo
+    const fmtMatch = s => { const m=Math.floor(s/60),sc=s%60; return sc>0?`${m}'${String(sc).padStart(2,"0")}"`:m+"'"; };
+    // flush: acumula minutes y stintMin, borra entryTime - NO crea stintLog (eso solo en sub/fin)
+    const flush = cur => {
+      const en=entryRef.current;
+      const updM={...minsRef.current}, updS={...stintRef.current};
+      for(const id of onFieldRef.current){
+        if(en[id]!==undefined){
+          const delta=en[id]-cur;
+          updM[id]=(updM[id]||0)+delta;
+          updS[id]=(updS[id]||0)+delta;
+        }
+      }
+      setMinutes(updM); minsRef.current=updM;
+      setStintMin(updS); stintRef.current=updS;
+      setEntryTime({}); entryRef.current={};
+    };
+
+    // closeStintsForAll: crea stintLog para todos los jugadores en cancha (fin de tiempo)
+    const closeStintsForAll = curTL => {
+      const se=stintEntryRef.current;
+      const cur=HALF_SECS-curTL;
+      const newStints=[];
+      for(const id of onFieldRef.current){
+        if(se[id]!==undefined){
+          const p=ROSTER.find(r=>r.id===id);
+          newStints.push({pid:id,full:p?.full||p?.s,enteredAt:se[id],exitedAt:cur,half:halfRef.current});
+        }
+      }
+      if(newStints.length) setStintLog(prev=>[...prev,...newStints]);
+      setStintEntry({}); stintEntryRef.current={};
+    };
+    const toggleTimer = () => {
+      if(running){
+        flush(timeLeft); setRunning(false);
+      } else {
+        const en={};
+        const se={...stintEntryRef.current};
+        for(const id of onFieldRef.current){
+          en[id]=timeLeft;
+          // Only set stintEntry if player doesn't have one yet (first time entering this stint)
+          if(se[id]===undefined) se[id]=HALF_SECS-timeLeft;
+        }
+        setEntryTime(en); entryRef.current=en;
+        setStintEntry(se); stintEntryRef.current=se;
+        setRunning(true);
+      }
+    };
+    const editTimer = newVal => {
+      if(running){
+        flush(timeLeft);
+        setTimeLeft(newVal); tlRef.current=newVal;
+        const en={};
+        for(const id of onFieldRef.current) en[id]=newVal;
+        setEntryTime(en); entryRef.current=en;
+      } else {
+        setTimeLeft(newVal);
+      }
+      setModal(null);
+    };
+
+    const getLive = id => { const b=minutes[id]||0; if(running&&entryTime[id]!==undefined) return Math.max(0,b+(entryTime[id]-timeLeft)); return b; };
+    // stint: acumulado del turno actual + lo que lleva en este arranque
+    const getStint = id => { const b=stintMin[id]||0; if(running&&entryTime[id]!==undefined) return Math.max(0,b+(entryTime[id]-timeLeft)); return b; };
+
+    const getPS = id => ({
+      goals: goalLog.filter(g=>g.pid===id).length,
+      fCom: foulLog.filter(f=>f.pid===id&&f.t==='com').length,
+      fRec: foulLog.filter(f=>f.pid===id&&f.t==='rec').length,
+      yel: cardLog.filter(c=>c.pid===id&&c.t==='yellow').length,
+      red: cardLog.filter(c=>c.pid===id&&c.t==='red').length,
+    });
+
+    const bocaScore=goalLog.length;
+    const tCom_=foulLog.filter(f=>f.t==='com').length;
+    const tRec_=foulLog.filter(f=>f.t==='rec').length;
+    const tYel_=cardLog.filter(c=>c.t==='yellow').length;
+    const tRed_=cardLog.filter(c=>c.t==='red').length;
+    const generarPDF = (periodo) => { try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+      const W=210, pad=13;
+      const A=[0,18,71], A2=[12,26,100], A3=[6,15,60];
+      const Y=[255,215,0], W2=[255,255,255], R=[255,75,75], G=[0,193,106];
+      let y=0;
+
+      // ── Header ──────────────────────────────────────────
+      doc.setFillColor(...A); doc.rect(0,0,W,30,'F');
+      doc.setTextColor(...Y); doc.setFont('helvetica','bold'); doc.setFontSize(16);
+      doc.text('BOCA FUTSAL 2026', W/2, 10, {align:'center'});
+      doc.setFontSize(18);
+      doc.setTextColor(...Y); doc.text(`BOCA ${bocaScore}`, W/2-10, 20, {align:'right'});
+      doc.setTextColor(150,150,180); doc.text('--', W/2, 20, {align:'center'});
+      doc.setTextColor(...R); doc.text(`${rivalGoals} ${rival}`, W/2+10, 20, {align:'left'});
+      doc.setFontSize(8); doc.setTextColor(160,160,200); doc.setFont('helvetica','normal');
+      doc.text(`${periodo} | ${matchMeta?.torneo||''} ${matchMeta?.instancia||''} | ${matchMeta?.condicion||''} | ${matchMeta?.cancha||''}`, W/2, 27, {align:'center'});
+      y=36;
+
+      // ── Resumen ─────────────────────────────────────────
+      doc.setFillColor(30,40,90); doc.roundedRect(pad, y, W-pad*2, 16, 2, 2, 'F');
+      doc.setTextColor(...Y); doc.setFont('helvetica','bold'); doc.setFontSize(8);
+      doc.text('RESUMEN', pad+3, y+5);
+      doc.setFont('helvetica','normal'); doc.setTextColor(...W2); doc.setFontSize(7.5);
+      doc.text(`Goles Boca: ${bocaScore}  |  Rival: ${rivalGoals}  |  Resultado: ${bocaScore>rivalGoals?'GANADO':bocaScore<rivalGoals?'PERDIDO':'EMPATE'}`, pad+3, y+10);
+      doc.text(`Faltas com: ${tComTotal}  |  Rec: ${tRecTotal}  |  Amarillas: ${tYelTotal}  |  Rojas: ${tRedTotal}`, pad+3, y+15);
+      y+=21;
+
+      // ── Construir stintMap ───────────────────────────────
+      const sm={};
+      stintLog.forEach(s=>{ if(!sm[s.pid]) sm[s.pid]=[]; sm[s.pid].push(s); });
+      Object.entries(entryTime).forEach(([id,tl])=>{
+        const pid=parseInt(id);
+        if(!sm[pid]) sm[pid]=[];
+        sm[pid].push({pid,enteredAt:HALF_SECS-Number(tl),exitedAt:HALF_SECS-timeLeft,half,open:true});
+      });
+      const fmtCD = s => {
+        const n=isNaN(Number(s))?0:Math.max(0,HALF_SECS-Number(s));
+        const m=Math.floor(n/60),sc=n%60;
+        return sc>0?`${m}m${String(sc).padStart(2,'0')}s`:m+`m`;
+      };
+      const getDur = s => { const n=Number(s)||0; return Math.abs(HALF_SECS-n); };
+
+      // ── Tabla jugadores ──────────────────────────────────
+      doc.setFillColor(...A); doc.rect(pad, y, W-pad*2, 7,'F');
+      doc.setTextColor(...Y); doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+      doc.text('JUGADOR', pad+3, y+4.5);
+      doc.text('MINUTOS', pad+58, y+4.5, {align:'center'});
+      doc.text('GOL', pad+83, y+4.5, {align:'center'});
+      doc.text('F.COM', pad+98, y+4.5, {align:'center'});
+      doc.text('F.REC', pad+113, y+4.5, {align:'center'});
+      doc.text('AMA', pad+127, y+4.5, {align:'center'});
+      doc.text('ROJ', pad+140, y+4.5, {align:'center'});
+      y+=8;
+
+      const jugadores = ROSTER
+        .map(p=>({...p, secs:getLivePDF(p.id), ...getPS(p.id)}))
+        .filter(p=>p.secs>0||p.goals>0||p.fCom>0||p.fRec>0||p.yel>0||p.red>0)
+        .sort((a,b)=>b.secs-a.secs);
+
+      jugadores.forEach((p,i) => {
+        const stints=sm[p.id]||[];
+        const s1=stints.filter(s=>s.half===1);
+        const s2=stints.filter(s=>s.half===2);
+        const hasEv=p.fCom>0||p.fRec>0||p.yel>0||p.red>0||p.goals>0;
+        const extraLines=(s1.length>0?1:0)+(s2.length>0?1:0)+(hasEv?1:0);
+        const rowH=Math.max(7.5, 6+extraLines*4.5);
+
+        if(y+rowH>280){ doc.addPage(); y=15; }
+
+        const bg=i%2===0?A2:A3;
+        doc.setFillColor(...bg); doc.rect(pad, y-1, W-pad*2, rowH, 'F');
+
+        // Nombre
+        doc.setTextColor(...W2); doc.setFont('helvetica','bold'); doc.setFontSize(8);
+        doc.text(`#${p.n||''} ${p.s}${p.isGK?' (PO)':''}`, pad+3, y+4);
+        // Minutos total
+        doc.setTextColor(...Y); doc.setFont('helvetica','bold'); doc.setFontSize(8);
+        doc.text(fmtMin(p.secs), pad+58, y+4, {align:'center'});
+        // Stats
+        doc.setFont('helvetica','normal'); doc.setTextColor(...W2); doc.setFontSize(7.5);
+        doc.text(p.goals>0?String(p.goals):'-', pad+83, y+4, {align:'center'});
+        doc.text(p.fCom>0?String(p.fCom):'-', pad+98, y+4, {align:'center'});
+        doc.text(p.fRec>0?String(p.fRec):'-', pad+113, y+4, {align:'center'});
+        p.yel>0?doc.setTextColor(249,168,37):doc.setTextColor(...W2);
+        doc.text(p.yel>0?String(p.yel):'-', pad+127, y+4, {align:'center'});
+        p.red>0?doc.setTextColor(255,75,75):doc.setTextColor(...W2);
+        doc.text(p.red>0?String(p.red):'-', pad+140, y+4, {align:'center'});
+
+        let ey=y+7.5;
+        // 1T stints
+        if(s1.length>0){
+          doc.setTextColor(100,220,140); doc.setFont('helvetica','bold'); doc.setFontSize(6.5);
+          doc.text('1T:', pad+3, ey);
+          doc.setFont('helvetica','normal');
+          const d1=s1.map(s=>{
+            const en=fmtCD(s.enteredAt), ex=s.open?'(cancha)':fmtCD(s.exitedAt);
+            const dur=fmtMin(Math.abs(Number(s.exitedAt||0)-Number(s.enteredAt||0)));
+            return `${en} - ${ex} [${dur}]`;
+          }).join('   ');
+          doc.text(d1, pad+10, ey);
+          ey+=4.5;
+        }
+        // 2T stints
+        if(s2.length>0){
+          doc.setTextColor(100,180,255); doc.setFont('helvetica','bold'); doc.setFontSize(6.5);
+          doc.text('2T:', pad+3, ey);
+          doc.setFont('helvetica','normal');
+          const d2=s2.map(s=>{
+            const en=fmtCD(s.enteredAt), ex=s.open?'(cancha)':fmtCD(s.exitedAt);
+            const dur=fmtMin(Math.abs(Number(s.exitedAt||0)-Number(s.enteredAt||0)));
+            return `${en} - ${ex} [${dur}]`;
+          }).join('   ');
+          doc.text(d2, pad+10, ey);
+          ey+=4.5;
+        }
+        y+=rowH;
+      });
+
+      // ── Goles ────────────────────────────────────────────
+      if(goalLog.length>0){
+        y+=3;
+        if(y+goalLog.length*7+8>280){ doc.addPage(); y=15; }
+        doc.setFillColor(...A); doc.rect(pad, y, W-pad*2, 7,'F');
+        doc.setTextColor(...G); doc.setFont('helvetica','bold'); doc.setFontSize(8);
+        doc.text('GOLES BOCA', pad+3, y+4.5); y+=8;
+        goalLog.forEach((g,i)=>{
+          const gp=ROSTER.find(r=>r.id===g.pid);
+          const snap=g.snap?g.snap.map(id=>{ const p2=ROSTER.find(r=>r.id===id); return p2?p2.s:'?'; }).join(', '):'';
+          doc.setFillColor(...(i%2===0?A2:A3)); doc.rect(pad, y-1, W-pad*2, 8,'F');
+          doc.setTextColor(...W2); doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
+          doc.text(`Gol ${i+1} (${g.half===1?'1T':'2T'}): ${gp?gp.full||gp.s:'Sin asignar'}`, pad+3, y+4);
+          doc.setTextColor(160,160,200);
+          doc.text(`Cancha: ${snap}`, pad+3, y+7);
+          y+=9;
+        });
+      }
+
+      // ── Footer ───────────────────────────────────────────
+      const fecha=new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
+      doc.setFillColor(...A); doc.rect(0,285,W,12,'F');
+      doc.setTextColor(100,100,150); doc.setFontSize(7); doc.setFont('helvetica','normal');
+      doc.text(`Boca Futsal 2026  -  ${fecha}`, W/2, 291, {align:'center'});
+
+      doc.save(`boca-${periodo.toLowerCase().replace(/ /g,'-')}-${Date.now()}.pdf`);
+    } catch(err){ setSaveMsg('Error PDF: '+err.message); } };
+
+    // ── GUARDAR EN DRIVE ──────────────────────────────────
+    const [saving, setSaving] = useState(false);
+    const [saveMsg, setSaveMsg] = useState("");
+    const guardarEnDrive = async () => {
+      if(!APPS_SCRIPT_URL){ setSaveMsg("⚠️ Falta configurar la URL del script"); return; }
+      setSaving(true); setSaveMsg("");
+      const today = new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});
+      const mes = new Date().getMonth()+1;
+      const sem = Math.ceil(new Date().getDate()/7);
+      const rivalClean = (rival||"Rival").replace(/\s+/g,"");
+      const instClean = (matchMeta.instancia||"").replace(/\s+/g,"_");
+      const partidoId = `2026_${instClean}_Boca_${rivalClean}`;
+      const resultado = bocaScore > rivalGoals ? "Ganado" : bocaScore < rivalGoals ? "Perdido" : "Empate";
+      const fmtTime = s => { const m=Math.floor(s/60),sc=s%60; return `0:${String(m).padStart(2,"0")}:${String(sc).padStart(2,"0")}`; };
+      // Calcular tiempos jugados
+      const t1secs = Math.max(0, HALF_SECS - (half===1?timeLeft:0));
+      const t2secs = half===2 ? Math.max(0, HALF_SECS - timeLeft) : 0;
+      // Build stints por jugador
+      const stintMap = {};
+      stintLog.forEach(s=>{ if(!stintMap[s.pid]) stintMap[s.pid]=[]; stintMap[s.pid].push(s); });
+      Object.entries(entryTime).forEach(([idStr,tl])=>{
+        const id=parseInt(idStr); if(!stintMap[id]) stintMap[id]=[];
+        const elap = HALF_SECS-tl; const elap2 = HALF_SECS-timeLeft;
+        stintMap[id].push({pid:id,enteredAt:elap,exitedAt:elap2,half,open:true});
+      });
+      const fmtMM = s=>{ if(s<=0)return"00:00"; const m=Math.floor(s/60),sc=s%60; return `${String(m).padStart(2,"0")}:${String(sc).padStart(2,"0")}`; };
+      const payload = {
+        partido: { id:partidoId, temporada:"2026", fecha:today, rival, resultado,
+          golBoca:bocaScore, golRival:rivalGoals, tarjetasRivalAma:rivalCards.yel, tarjetasRivalRoj:rivalCards.red, condicion:matchMeta.condicion,
+          cancha:matchMeta.cancha, tipo:matchMeta.torneo, instancia:matchMeta.instancia,
+          tiempoJuego1T: fmtTime(t1secs), tiempoJuego2T: fmtTime(t2secs),
+          tiempoJuegoTotal: fmtTime(t1secs+t2secs), mes, semana: sem },
+        presencia: ROSTER.map(p => {
+          const ps = getPS(p.id); const mins = getLive(p.id);
+          const stints1 = (stintMap[p.id]||[]).filter(s=>s.half===1);
+          const stints2 = (stintMap[p.id]||[]).filter(s=>s.half===2);
+          const sumSecs = arr => arr.reduce((a,s)=>a+(s.exitedAt-s.enteredAt),0);
+          const avgSecs = arr => arr.length?Math.round(sumSecs(arr)/arr.length):0;
+          const presencia = mins>0?"Jugado":(stintMap[p.id])?"Jugado":"Convocado";
+          return {
+            nombre: p.full||p.s, presencia,
+            goles:ps.goals, fRecibidos:ps.fRec, fCometidos:ps.fCom,
+            amarillas:ps.yel, rojas:ps.red,
+            min1T: fmtMM(sumSecs(stints1)), ent1T: stints1.length, tEnt1T: fmtMM(avgSecs(stints1)),
+            min2T: fmtMM(sumSecs(stints2)), ent2T: stints2.length, tEnt2T: fmtMM(avgSecs(stints2)),
+            minTotal: fmtMM(mins), entTotal: (stintMap[p.id]||[]).length,
+            tEntTotal: fmtMM(mins>0?Math.round(mins/Math.max(1,(stintMap[p.id]||[]).length)):0),
+            stints: (stintMap[p.id]||[]).map(s=>({entra:fmtMM(s.enteredAt),sale:s.open?"-":fmtMM(s.exitedAt)}))
+          };
+        }).filter(p=>getLive(p.id)>0)
+      };
+      try {
+        // GET evita CORS preflight — funciona desde cualquier origen
+        const encoded = encodeURIComponent(JSON.stringify(payload));
+        const res = await fetch(APPS_SCRIPT_URL + "?data=" + encoded);
+        const json = await res.json();
+        if(json.ok){
+          setSaveMsg("✅ Guardado en Drive!");
+        } else {
+          setSaveMsg("❌ Error: "+(json.msg||json.error||"Ver consola"));
+          console.error("Drive error:", json);
+        }
+      } catch(e){
+        setSaveMsg("❌ "+e.message);
+        console.error("Drive fetch error:", e);
+      }
+      setSaving(false);
+    };
+
+    const getLivePDF = id => { const b=minutes[id]||0; if(entryTime[id]!==undefined) return Math.max(0,b+(entryTime[id]-timeLeft)); return b; };
+
+    const copiarResumen = () => {
+      const hoy = new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});
+      const resultado = bocaScore>rivalGoals?"Ganado":bocaScore<rivalGoals?"Perdido":"Empate";
+      const fmtE = s => { if(!s&&s!==0)return"0'"; const n=Math.max(0,HALF_SECS-Number(s)); const m=Math.floor(n/60),sc=n%60; return sc>0?`${m}'${String(sc).padStart(2,"0")}"`:m+"'"; };
+      let txt = `PARTIDO: BOCA ${bocaScore} - ${rivalGoals} ${(rival||"Rival").toUpperCase()}\n`;
+      txt += `Fecha: ${hoy} | ${matchMeta.torneo} | ${matchMeta.instancia||"-"} | ${matchMeta.condicion} | ${matchMeta.cancha||"-"}\n`;
+      txt += `Resultado: ${resultado}\n\nMINUTOS JUGADOS:\n`;
+      const byPid = {};
+      stintLog.forEach(s=>{ if(!byPid[s.pid]) byPid[s.pid]={full:s.full,stints:[]}; byPid[s.pid].stints.push(s); });
+      Object.entries(entryTime).forEach(([idStr,tl])=>{
+        const id=parseInt(idStr); const p=ROSTER.find(r=>r.id===id);
+        if(!byPid[id]) byPid[id]={full:p?.full||p?.s,stints:[]};
+        byPid[id].stints.push({pid:id,full:p?.full||p?.s,enteredAt:HALF_SECS-tl,exitedAt:HALF_SECS-timeLeft,half,open:true});
+      });
+      ROSTER.forEach(p=>{ if(!byPid[p.id]) return; const {full,stints}=byPid[p.id]; const totalSecs=getLive(p.id); const detalle=stints.map(s=>`${s.half===1?"1T":"2T"} ${fmtE(s.enteredAt)}->${s.open?"(cancha)":fmtE(s.exitedAt)}`).join(", "); txt+=`  ${full}: ${detalle} | Total: ${fmtMin(totalSecs)}\n`; });
+      txt += `\nGOLES BOCA (${bocaScore}):\n`; goalLog.forEach((g,i)=>{ const p=ROSTER.find(r=>r.id===g.pid); const snap=g.snap?g.snap.map(id=>{const p2=ROSTER.find(r=>r.id===id);return p2?p2.s:"?";}).join(", "):""; txt+=`  Gol ${i+1}: ${p?p.full:"Sin asignar"} | En cancha: ${snap} (${g.half===1?"1T":"2T"})\n`; });
+      txt += `GOLES RIVAL (${rivalGoals})\nFaltas cometidas: ${tComTotal} | Recibidas: ${tRecTotal}\nAmarillas: ${tYelTotal} | Rojas: ${tRedTotal}\nTarjetas RIVAL: Ama:${rivalCards.yel} Roj:${rivalCards.red}\n`;
+      navigator.clipboard.writeText(txt).then(()=>setSaveMsg("✅ ¡Copiado! Pegalo en Claude")).catch(()=>setSaveMsg("⚠️ Error al copiar"));
+    };
+    const tCom=foulLog.filter(f=>f.t==='com'&&f.half===half).length;
+    const tRec=foulLog.filter(f=>f.t==='rec'&&f.half===half).length;
+    const tYel=cardLog.filter(c=>c.t==='yellow'&&c.half===half).length;
+    const tRed=cardLog.filter(c=>c.t==='red'&&c.half===half).length;
+    // Totales del partido para stats/PDF
+    const tComTotal=foulLog.filter(f=>f.t==='com').length;
+    const tRecTotal=foulLog.filter(f=>f.t==='rec').length;
+    const tYelTotal=cardLog.filter(c=>c.t==='yellow').length;
+    const tRedTotal=cardLog.filter(c=>c.t==='red').length;
+
+    const fieldCardStyle = p => {
+      const isSub = subOutId===p.id;
+      if(isSub) return {...C.fieldCard, background:"#6b0f0f", border:"2px solid #FF4B4B"};
+      if(p.isGK) return C.fieldCard; // sin alertas para arqueros
+      const stint = getStint(p.id);
+      if(stint>=120) return {...C.fieldCard, border:"2px solid #FF4B4B", animation:"rotRed 1s infinite"};
+      if(stint>=90)  return {...C.fieldCard, border:"2px solid #f9a825"};
+      return C.fieldCard;
+    };
+
+    const handleFieldTap = id => { if(subOutId===id){setSubOutId(null);return;} setSubOutId(id); };
+
+    const doSub = inId => {
+      const en={...entryRef.current}, updM={...minsRef.current}, updS={...stintRef.current}, cur=tlRef.current;
+      const se={...stintEntryRef.current};
+      const curElapsed=HALF_SECS-cur;
+      // Close stint for outgoing player
+      if(running&&en[subOutId]!==undefined){
+        const delta=en[subOutId]-cur;
+        updM[subOutId]=(updM[subOutId]||0)+delta;
+        delete en[subOutId];
+      }
+      if(se[subOutId]!==undefined){
+        const pOut=ROSTER.find(r=>r.id===subOutId);
+        setStintLog(prev=>[...prev,{pid:subOutId,full:pOut?.full||pOut?.s,enteredAt:se[subOutId],exitedAt:curElapsed,half:halfRef.current}]);
+        delete se[subOutId];
+      }
+      // Open stint for incoming player
+      updS[inId]=0;
+      if(running){ en[inId]=cur; }
+      se[inId]=curElapsed; // record entry elapsed for new player
+      const nf=onField.map(id=>id===subOutId?inId:id);
+      setOnField(nf); onFieldRef.current=nf;
+      setMinutes(updM); minsRef.current=updM;
+      setStintMin(updS); stintRef.current=updS;
+      setEntryTime(en); entryRef.current=en;
+      setStintEntry(se); stintEntryRef.current=se;
+      setSubOutId(null);
+    };
+    const addCard = (id,type) => {
+      setCardLog(p=>[...p,{pid:id,t:type,half,snap:[...onFieldRef.current]}]);
+      if(type==='red'){
+        const en={...entryRef.current}, upd={...minsRef.current}, cur=tlRef.current;
+        if(running&&en[id]!==undefined){
+          upd[id]=(upd[id]||0)+(en[id]-cur);
+          const pRed=ROSTER.find(r=>r.id===id);
+          setStintLog(prev=>[...prev,{pid:id,full:pRed?.full||pRed?.s,enteredAt:elapsed(en[id]),exitedAt:elapsed(cur),half:halfRef.current}]);
+          delete en[id];
+        }
+        const nf=onField.filter(x=>x!==id);
+        setOnField(nf); onFieldRef.current=nf; setMinutes(upd); minsRef.current=upd; setEntryTime(en); entryRef.current=en;
+      }
+      setModal(null);
+    };
+    const addGoal=id=>{setGoalLog(p=>[...p,{pid:id,half,snap:[...onFieldRef.current]}]);setModal(null);};
+    const removeGoal=()=>setGoalLog(p=>p.length>0?p.slice(0,-1):p);
+    const addFoul=(id,t)=>{setFoulLog(p=>[...p,{pid:id,t,half,snap:[...onFieldRef.current]}]);setModal(null);};
+    const removeFoul=t=>setFoulLog(p=>{const i=[...p].reverse().findIndex(f=>f.t===t);if(i<0)return p;return p.filter((_,j)=>j!==p.length-1-i);});
+    const removeCard=t=>setCardLog(p=>{const i=[...p].reverse().findIndex(c=>c.t===t);if(i<0)return p;return p.filter((_,j)=>j!==p.length-1-i);});
+
+    const startSecondHalf=()=>{setHalf(2);setTimeLeft(HALF_SECS);setRunning(false);setEntryTime({});setStintMin({});setStintEntry({});setSubOutId(null);setModal(null);halfRef.current=2;setPhase("setup2");};
+    const resetAll=()=>{
+      if(!window.confirm("¿Reiniciar partido?"))return;
+      setPhase("setup");setHalf(1);setTimeLeft(HALF_SECS);setRunning(false);
+      setOnField([]);setMinutes({});setStintMin({});setEntryTime({});setSubOutId(null);setModal(null);
+      setGoalLog([]);setFoulLog([]);setCardLog([]);setRivalGoals(0);setRivalCards({yel:0,red:0});setRival("Rival");setMatchMeta({torneo:"Regular",instancia:"",condicion:"Local",cancha:""});setSaveMsg("");setStintLog([]);setStintEntry({});try{localStorage.removeItem('bocaMatch');}catch(e){}
+    };
+
+    const expelled=[...new Set(cardLog.filter(c=>c.t==='red').map(c=>c.pid))];
+    const rivalName=(rival||"Rival").toUpperCase();
+
+    if(phase==="setup"||phase==="setup2")
+      return <Setup half={phase==="setup2"?2:1} current={onField} rival={rival} matchMeta={matchMeta}
+        onMetaChange={setMatchMeta} onRivalChange={setRival} onStart={ids=>{setOnField(ids);onFieldRef.current=ids;const se={};ids.forEach(id=>se[id]=HALF_SECS-timeLeft);setStintEntry(se);stintEntryRef.current=se;setPhase("match");}}/>;
+
+    if(phase==="halftime") return (
+      <div style={{...C.overlay,alignItems:"flex-start",paddingTop:20}}>
+        <div style={{...C.modal,maxHeight:"90vh",overflowY:"auto",width:"100%"}}>
+          <div style={C.badge}>⏸ FIN 1er TIEMPO</div>
+          <div style={C.modalScore}>BOCA {bocaScore} — {rivalGoals}<br/><span style={{fontSize:13,color:"#aaa"}}>{rivalName}</span></div>
+          <p style={{color:"#888",fontSize:12}}>Com: {tComTotal} · Rec: {tRecTotal} · 🟨{tYelTotal} 🟥{tRedTotal} | Rival: 🟨{rivalCards.yel} 🟥{rivalCards.red}</p>
+          {saveMsg&&<p style={{color:saveMsg.startsWith("✅")?"#00C16A":"#FF4B4B",fontSize:12}}>{saveMsg}</p>}
+          <button style={{...C.btnGhost,width:"100%",background:saving?"#333":undefined}} onClick={guardarEnDrive} disabled={saving}>{saving?"Guardando...":"💾 Guardar 1er T en Drive"}</button>
+          <button style={{...C.btnGhost,width:"100%"}} onClick={()=>generarPDF('1er Tiempo')}>📄 Bajar PDF 1er Tiempo</button>
+          <button style={{...C.btnGhost,width:"100%",borderColor:"#00C16A",color:"#00C16A"}} onClick={copiarResumen}>📋 Copiar para Claude</button>
+          <button style={{...C.btnGhost,width:"100%"}} onClick={()=>setModal({type:'stats'})}>📊 Estadísticas</button>
+          <button style={{...C.btnPrimary,width:"100%",fontSize:18,padding:"14px"}} onClick={()=>{setModal(null);startSecondHalf();}}>▶ Iniciar 2do Tiempo</button>
+          {modal?.type==='stats'&&<StatsModal getPS={getPS} getLive={getLive} stintLog={stintLog} entryTime={entryTime} timeLeft={timeLeft} half={half} onClose={()=>setModal(null)}/>}
+        </div>
+      </div>
+    );
+    if(phase==="done") return (
+      <div style={{...C.overlay,alignItems:"flex-start",paddingTop:20}}>
+        <div style={{...C.modal,maxHeight:"90vh",overflowY:"auto",width:"100%"}}>
+        <div style={C.badge}>🏁 PARTIDO FINALIZADO</div>
+        <div style={C.modalScore}>BOCA {bocaScore} — {rivalGoals}<br/><span style={{fontSize:13,color:"#aaa"}}>{rivalName}</span></div>
+        <button style={{...C.btnPrimary,width:"100%"}} onClick={()=>generarPDF('Partido Final')}>📄 Bajar PDF Partido Completo</button>
+        <button style={{...C.btnGhost,width:"100%",borderColor:"#00C16A",color:"#00C16A"}} onClick={copiarResumen}>📋 Copiar resumen para Claude</button>
+        <button style={{...C.btnPrimary,width:"100%",background:saving?"#555":"#0a5c2a",color:"#fff"}} onClick={guardarEnDrive} disabled={saving}>{saving?"Guardando...":"💾 Guardar en Drive"}</button>
+        {saveMsg&&<p style={{color:saveMsg.startsWith("✅")?"#00C16A":"#FF4B4B",fontSize:12,textAlign:"center"}}>{saveMsg}</p>}
+        <button style={{...C.btnGhost,width:"100%"}} onClick={()=>setModal({type:'stats'})}>📊 Estadísticas</button>
+        <button style={{...C.btnGhost,width:"100%"}} onClick={resetAll}>↩ Nuevo Partido</button>
+        {modal?.type==='stats'&&<StatsModal getPS={getPS} getLive={getLive} stintLog={stintLog} entryTime={entryTime} timeLeft={timeLeft} half={half} onClose={()=>setModal(null)}/>}
+        </div>
+      </div>
+    );
+
+    const fieldPlayers=onField.map(id=>ROSTER.find(p=>p.id===id)).filter(Boolean);
+    const bench=ROSTER.filter(p=>!onField.includes(p.id)&&!expelled.includes(p.id));
+    const urgent=timeLeft<=60&&timeLeft>0;
+
+    return (
+      <div style={C.root}>
+        <div style={C.header}>
+          <div>
+            <div style={C.badge}>{half===1?"1er":"2do"} TIEMPO</div>
+            <div style={{fontSize:10,color:"#555",marginTop:1,letterSpacing:1}}>BOCA vs {rivalName}</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button style={C.iconBtn} onClick={()=>setModal({type:'stats'})}>📊</button>
+            <button style={C.iconBtn} onClick={resetAll}>↩</button>
+          </div>
+        </div>
+
+        {/* Timer */}
+        <div style={C.timerBlock}>
+          <div style={C.timerRow}>
+            <div style={{...C.timerDisplay,color:urgent?"#FF4B4B":timeLeft===0?"#444":"#FFD700",animation:urgent&&running?"pulse 1s infinite":"none"}}>
+              {fmt(timeLeft)}
+            </div>
+            <button style={C.editBtn} onClick={()=>setModal({type:'editTimer'})} title="Editar tiempo">✏️</button>
+          </div>
+          <button style={{...C.playBtn,background:running?"#b71c1c":timeLeft===0?"#333":"#1b5e20"}}
+            onClick={toggleTimer} disabled={timeLeft===0}>
+            {running?"⏸  PAUSAR":timeLeft===HALF_SECS?"▶  INICIAR":"▶  CONTINUAR"}
+          </button>
+        </div>
+
+        {/* Score */}
+        <div style={C.scoreRow}>
+          <div style={C.scoreTeam}>
+            <div style={C.teamLbl}>🔵🟡 BOCA</div>
+            <div style={C.scoreCtrl}>
+              <button style={C.scoreBtn} onClick={removeGoal}>−</button>
+              <div style={C.scoreNum}>{bocaScore}</div>
+              <button style={C.scoreBtn} onClick={()=>setModal({type:'pick',title:"⚽ ¿Quién metió el gol?",onPick:id=>addGoal(id),onSkip:()=>addGoal(null)})}>+</button>
+            </div>
+          </div>
+          <div style={{fontSize:22,color:"#333",alignSelf:"flex-end",paddingBottom:6}}>—</div>
+          <div style={C.scoreTeam}>
+            <div style={C.teamLbl}>{rivalName}</div>
+            <div style={C.scoreCtrl}>
+              <button style={C.scoreBtn} onClick={()=>setRivalGoals(g=>Math.max(0,g-1))}>−</button>
+              <div style={C.scoreNum}>{rivalGoals}</div>
+              <button style={C.scoreBtn} onClick={()=>setRivalGoals(g=>g+1)}>+</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Events: fouls + cards */}
+        <div style={C.eventsGrid}>
+          <div style={C.evItem}>
+            <span style={C.evLbl}>🟥 Falta com.</span>
+            <div style={C.evCtrl}>
+              <button style={C.evBtn} onClick={()=>removeFoul('com')}>−</button>
+              <span style={C.evNum}>{tCom}</span>
+              <button style={C.evBtn} onClick={()=>setModal({type:'pick',title:"🟥 ¿Quién cometió la falta?",onPick:id=>addFoul(id,'com'),onSkip:()=>addFoul(null,'com')})}>+</button>
+            </div>
+          </div>
+          <div style={C.evDiv}/>
+          <div style={C.evItem}>
+            <span style={C.evLbl}>🟨 Falta rec.</span>
+            <div style={C.evCtrl}>
+              <button style={C.evBtn} onClick={()=>removeFoul('rec')}>−</button>
+              <span style={C.evNum}>{tRec}</span>
+              <button style={C.evBtn} onClick={()=>setModal({type:'pick',title:"🟨 ¿Quién recibió la falta?",onPick:id=>addFoul(id,'rec'),onSkip:()=>addFoul(null,'rec')})}>+</button>
+            </div>
+          </div>
+          <div style={{...C.evItem,borderTop:"1px solid #0f1e5e"}}>
+            <span style={C.evLbl}>🟨 Amarillas</span>
+            <div style={C.evCtrl}>
+              <button style={C.evBtn} onClick={()=>removeCard('yellow')}>−</button>
+              <span style={C.evNum}>{tYel}</span>
+              <button style={C.evBtn} onClick={()=>setModal({type:'pick',title:"🟨 ¿A quién le dieron amarilla?",onPick:id=>addCard(id,'yellow'),onSkip:()=>addCard(null,'yellow')})}>+</button>
+            </div>
+          </div>
+          <div style={{...C.evDiv,borderTop:"1px solid #0f1e5e"}}/>
+          <div style={{...C.evItem,borderTop:"1px solid #0f1e5e"}}>
+            <span style={C.evLbl}>🟥 Rojas</span>
+            <div style={C.evCtrl}>
+              <button style={C.evBtn} onClick={()=>removeCard('red')}>−</button>
+              <span style={C.evNum}>{tRed}</span>
+              <button style={C.evBtn} onClick={()=>setModal({type:'pick',title:"🟥 ¿A quién le dieron roja?",onPick:id=>addCard(id,'red'),onSkip:()=>addCard(null,'red')})}>+</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Tarjetas del rival */}
+        <div style={{fontSize:9,color:"#FF4B4B",padding:"5px 16px 2px",fontWeight:700,letterSpacing:2,textTransform:"uppercase",background:"rgba(255,75,75,.04)"}}>
+          TARJETAS RIVAL
+        </div>
+        <div style={C.rivalGrid}>
+          <div style={C.evItem}>
+            <span style={{...C.evLbl,color:"#f9a825"}}>🟨 Amarillas rival</span>
+            <div style={C.evCtrl}>
+              <button style={C.evBtn} onClick={()=>setRivalCards(c=>({...c,yel:Math.max(0,c.yel-1)}))}>−</button>
+              <span style={{...C.evNum,color:"#f9a825"}}>{rivalCards.yel}</span>
+              <button style={C.evBtn} onClick={()=>setRivalCards(c=>({...c,yel:c.yel+1}))}>+</button>
+            </div>
+          </div>
+          <div style={C.evDiv}/>
+          <div style={C.evItem}>
+            <span style={{...C.evLbl,color:"#FF4B4B"}}>🟥 Rojas rival</span>
+            <div style={C.evCtrl}>
+              <button style={C.evBtn} onClick={()=>setRivalCards(c=>({...c,red:Math.max(0,c.red-1)}))}>−</button>
+              <span style={{...C.evNum,color:"#FF4B4B"}}>{rivalCards.red}</span>
+              <button style={C.evBtn} onClick={()=>setRivalCards(c=>({...c,red:c.red+1}))}>+</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Rotation legend */}
+        <div style={{display:"flex",gap:12,padding:"4px 16px",alignItems:"center"}}>
+          <span style={{fontSize:9,color:"#555",letterSpacing:1,textTransform:"uppercase"}}>Rotación:</span>
+          <span style={{fontSize:9,color:"#f9a825"}}>■ 1:30 aviso</span>
+          <span style={{fontSize:9,color:"#FF4B4B"}}>■ 2:00 cambiar</span>
+        </div>
+
+        {/* Field */}
+        <div style={C.secLabel}>
+          EN CANCHA
+          {subOutId!==null
+            ?<span style={{color:"#FF4B4B",fontSize:11,marginLeft:8}}>← tocá del banco quién entra</span>
+            :<span style={{color:"#555",fontSize:11,marginLeft:8}}>tocá para sustituir</span>}
+        </div>
+        <div style={C.fieldGrid}>
+          {fieldPlayers.map(p=>{
+            const st=getPS(p.id);
+            const stint=getStint(p.id);
+            const live=getLive(p.id);
+            return (
+              <div key={p.id} onClick={()=>handleFieldTap(p.id)} style={fieldCardStyle(p)}>
+                {p.isGK&&<span style={C.gkBadge}>PO</span>}
+                <span style={{fontSize:8,color:"#FFD700",fontWeight:700,letterSpacing:0.5,lineHeight:1}}>#{p.n}</span>
+                {st.yel>0&&<span style={{fontSize:10,lineHeight:1}}>{"🟨".repeat(Math.min(st.yel,2))}</span>}
+                <div style={C.pName}>{p.s}</div>
+                {/* STINT - grande, es el reloj de rotación */}
+                <div style={{fontSize:13,fontWeight:800,fontFamily:F,
+                  color:stint>=120?"#FF4B4B":stint>=90?"#f9a825":"#FFD700"}}>
+                  {fmtMin(stint)}
+                </div>
+                {/* TOTAL - chico abajo */}
+                <div style={{fontSize:8,color:"#444",fontWeight:600,letterSpacing:.5}}>
+                  {fmtMin(live)}
+                </div>
+                <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center"}}>
+                  {st.goals>0&&<span style={C.statBubble}>⚽{st.goals}</span>}
+                  {st.yel>0&&<span style={{...C.statBubble,background:"#f9a825",color:"#000"}}>🟨</span>}
+                  {st.red>0&&<span style={{...C.statBubble,background:"#c62828"}}>🟥</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Bench */}
+        <div style={C.secLabel}>
+          BANCO
+          {subOutId===null&&<span style={{color:"#555",fontSize:11,marginLeft:8}}>tocá uno en cancha primero</span>}
+        </div>
+        <div style={C.benchGrid}>
+          {bench.map(p=>{
+            const live=getLive(p.id); const st=getPS(p.id); const active=subOutId!==null;
+            return (
+              <div key={p.id} onClick={()=>active&&doSub(p.id)}
+                style={{...C.benchCard,...(active?C.benchActive:{})}}>
+                {p.isGK&&<span style={{fontSize:7,background:"#FFD700",color:"#000",borderRadius:2,padding:"0 2px",fontWeight:800}}>PO</span>}
+                <span style={{fontSize:9,color:"#FFD700",fontWeight:700}}>#{p.n}</span>
+                <span style={C.benchName}>{p.s}</span>
+                {live>0&&<span style={C.benchMins}>{fmtMin(live)}</span>}
+                {st.goals>0&&<span style={{fontSize:10}}>⚽</span>}
+                {st.yel>0&&<span style={{fontSize:10}}>🟨</span>}
+                {st.red>0&&<span style={{fontSize:10}}>🟥</span>}
+              </div>
+            );
+          })}
+        </div>
+
+        {expelled.length>0&&<>
+          <div style={{...C.secLabel,color:"#FF4B4B"}}>EXPULSADOS</div>
+          <div style={C.benchGrid}>
+            {expelled.map(id=>{const p=ROSTER.find(r=>r.id===id);return(
+              <div key={id} style={{...C.benchCard,border:"1px solid #FF4B4B",opacity:.6}}>
+                <span style={C.benchName}>{p?.s}</span><span style={{fontSize:10}}>🟥</span>
+              </div>
+            );})}
+          </div>
+        </>}
+
+        {modal?.type==='editTimer'&&<TimerEditModal timeLeft={timeLeft} onConfirm={editTimer} onClose={()=>setModal(null)}/>}
+        {modal?.type==='pick'&&<PickerModal title={modal.title} players={fieldPlayers} onPick={id=>modal.onPick(id)} onSkip={()=>modal.onSkip()} onClose={()=>setModal(null)}/>}
+        {modal?.type==='stats'&&<StatsModal getPS={getPS} getLive={getLive} stintLog={stintLog} entryTime={entryTime} timeLeft={timeLeft} half={half} onClose={()=>setModal(null)}/>}
+      </div>
+    );
+  }
+
+  function Setup({half,current,matchMeta,onMetaChange,rival,onRivalChange,onStart}) {
+    const [sel,setSel]=useState(current.length?[...current]:[]);
+    const [riv,setRiv]=useState(rival==="Rival"?"":rival);
+    const [torneo,setTorneo]=useState(matchMeta.torneo||"Regular");
+    const [instancia,setInstancia]=useState(matchMeta.instancia||"");
+    const [condicion,setCondicion]=useState(matchMeta.condicion||"Local");
+    const [cancha,setCancha]=useState(matchMeta.cancha||"");
+    const toggle=id=>setSel(s=>s.includes(id)?s.filter(x=>x!==id):s.length<5?[...s,id]:s);
+    const inp={width:"100%",background:"#060f33",border:"1px solid #1a3aaa",borderRadius:8,padding:"9px 12px",color:"#fff",fontSize:15,fontFamily:F,outline:"none",marginBottom:8};
+    return (
+      <div style={C.root}>
+        <div style={{...C.header,justifyContent:"space-between"}}>
+          <span style={C.badge}>{half===1?"1er":"2do"} TIEMPO — Elegí 5 titulares</span>
+          <span style={{fontSize:22,fontWeight:800,color:sel.length===5?"#00C16A":"#FFD700"}}>{sel.length}/5</span>
+        </div>
+        {half===1&&<div style={{padding:"10px 16px 4px"}}>
+          <div style={{fontSize:10,color:"#FFD700",letterSpacing:2,fontWeight:700,marginBottom:6,textTransform:"uppercase"}}>Datos del Partido</div>
+          <input style={inp} placeholder="Rival..." value={riv} onChange={e=>setRiv(e.target.value)}/>
+          <select style={{...inp,appearance:"none"}} value={torneo} onChange={e=>setTorneo(e.target.value)}>
+            <option>Regular</option><option>Copa Argentina</option><option>Copa Eliminación</option>
+            <option>Playoff</option><option>Cuadrangular</option><option>Copa Libertadores</option><option>Amistoso</option>
+          </select>
+          <input style={inp} placeholder="Instancia (ej: 11ma Fecha, 4tos...)" value={instancia} onChange={e=>setInstancia(e.target.value)}/>
+          <select style={{...inp,appearance:"none"}} value={condicion} onChange={e=>setCondicion(e.target.value)}>
+            <option>Local</option><option>Visitante</option><option>Neutral</option>
+          </select>
+          <input style={{...inp,marginBottom:0}} placeholder="Cancha / Estadio..." value={cancha} onChange={e=>setCancha(e.target.value)}/>
+        </div>}
+        <div style={{fontSize:10,color:"#FFD700",letterSpacing:2,fontWeight:700,padding:"10px 16px 4px",textTransform:"uppercase"}}>Jugadores</div>
+        <div style={C.rosterGrid}>
+          {ROSTER.map(p=>{const on=sel.includes(p.id);return(
+            <div key={p.id} onClick={()=>toggle(p.id)} style={{...C.rCard,...(on?C.rCardSel:{})}}>
+              {p.isGK&&<span style={C.gkBadge}>PO</span>}
+              <span style={{fontSize:9,color:"#FFD700",fontWeight:700}}>#{p.n}</span>
+              <div style={{...C.pName,fontSize:12}}>{p.s}</div>
+            </div>
+          );})}
+        </div>
+        <div style={{padding:"10px 16px 40px"}}>
+          <button style={{...C.btnPrimary,width:"100%",opacity:sel.length===5?1:.3}}
+            disabled={sel.length!==5}
+            onClick={()=>{onRivalChange(riv||"Rival");onMetaChange({torneo,instancia,condicion,cancha});onStart(sel);}}>
+            ▶  {half===1?"Comenzar 1er Tiempo":"Comenzar 2do Tiempo"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function TimerEditModal({timeLeft,onConfirm,onClose}) {
+    const [mins,setMins]=useState(String(Math.floor(timeLeft/60)).padStart(2,"0"));
+    const [secs,setSecs]=useState(String(timeLeft%60).padStart(2,"0"));
+    const confirm=()=>{
+      const m=Math.max(0,Math.min(20,parseInt(mins)||0));
+      const s=Math.max(0,Math.min(59,parseInt(secs)||0));
+      onConfirm(m*60+s);
+    };
+    const inp = {width:64,background:"#060f33",border:"1px solid #1a3aaa",borderRadius:8,
+      padding:"8px",color:"#FFD700",fontSize:32,fontWeight:800,textAlign:"center",fontFamily:F,outline:"none"};
+    return (
+      <div style={C.overlay} onClick={onClose}>
+        <div style={C.modal} onClick={e=>e.stopPropagation()}>
+          <div style={C.badge}>✏️ EDITAR CRONÓMETRO</div>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <input type="number" min="0" max="20" value={mins} onChange={e=>setMins(e.target.value)} style={inp}/>
+            <span style={{fontSize:32,color:"#FFD700",fontWeight:800,lineHeight:1}}>:</span>
+            <input type="number" min="0" max="59" value={secs} onChange={e=>setSecs(e.target.value)} style={inp}/>
+          </div>
+          <p style={{color:"#555",fontSize:11,textAlign:"center"}}>minutos : segundos restantes</p>
+          <button style={{...C.btnPrimary,width:"100%"}} onClick={confirm}>✓  Confirmar</button>
+          <button style={{...C.btnGhost,width:"100%",borderColor:"#333",color:"#555"}} onClick={onClose}>Cancelar</button>
+        </div>
+      </div>
+    );
+  }
+
+  function PickerModal({title,players,onPick,onSkip,onClose}) {
+    return (
+      <div style={C.overlay} onClick={onClose}>
+        <div style={{...C.modal,maxHeight:"75vh",overflowY:"auto",gap:8}} onClick={e=>e.stopPropagation()}>
+          <div style={C.badge}>{title}</div>
+          {players.map(p=>(
+            <button key={p.id} style={{...C.btnPrimary,width:"100%",background:"#0D2280",color:"#fff",fontSize:15,padding:"12px"}} onClick={()=>onPick(p.id)}>
+              {p.s}
+            </button>
+          ))}
+          <button style={{...C.btnGhost,width:"100%",marginTop:2}} onClick={onSkip}>Sin asignar</button>
+          <button style={{...C.btnGhost,width:"100%",borderColor:"#333",color:"#555"}} onClick={onClose}>Cancelar</button>
+        </div>
+      </div>
+    );
+  }
+
+  function StatsModal({getPS,getLive,stintLog,entryTime,timeLeft,half,onClose}) {
+    const fmtM = s => { if(s<=0)return"0'"; const m=Math.floor(s/60),sc=s%60; return sc>0?`${m}'${String(sc).padStart(2,"0")}"`:m+"'"; };
+    const elap = tl => 20*60 - tl;
+    // Build stint map: pid → [{enteredAt,exitedAt,half,open}]
+    const stintMap = {};
+    stintLog.forEach(s=>{ if(!stintMap[s.pid]) stintMap[s.pid]=[]; stintMap[s.pid].push(s); });
+    // Add open stints (currently on field)
+    Object.entries(entryTime).forEach(([idStr,tl])=>{
+      const id=parseInt(idStr);
+      if(!stintMap[id]) stintMap[id]=[];
+      stintMap[id].push({enteredAt:elap(tl),exitedAt:elap(timeLeft),half,open:true});
+    });
+    const data=ROSTER.map(p=>({...p,secs:getLive(p.id),...getPS(p.id)}))
+      .filter(p=>p.secs>0||p.goals>0||p.fCom>0||p.fRec>0||p.yel>0||p.red>0)
+      .sort((a,b)=>b.secs-a.secs);
+    return (
+      <div style={C.overlay} onClick={onClose}>
+        <div style={{...C.modal,maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+          <div style={C.badge}>📊 ESTADÍSTICAS</div>
+          {data.length===0&&<p style={{color:"#888",fontSize:13}}>Sin datos aún</p>}
+          {data.map(p=>{
+            const stints=stintMap[p.id]||[];
+            return (
+              <div key={p.id} style={{width:"100%",background:"#060f33",borderRadius:8,padding:"8px 12px",marginBottom:5}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                  <span style={{fontWeight:700,fontSize:14}}>{p.s}{p.isGK?" (PO)":""}</span>
+                  <span style={{color:"#FFD700",fontSize:13,fontWeight:800}}>{fmtMin(p.secs)}</span>
+                </div>
+                {/* Stint breakdown */}
+                {stints.map((s,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                    <span style={{fontSize:9,color:"#555",letterSpacing:1,textTransform:"uppercase"}}>{s.half===1?"1T":"2T"}</span>
+                    <span style={{fontSize:11,color:"#aaa"}}>
+                      Entró <span style={{color:"#00C16A",fontWeight:700}}>{fmtM(s.enteredAt)}</span>
+                      {" → "}
+                      {s.open
+                        ? <span style={{color:"#FFD700",fontWeight:700}}>en cancha</span>
+                        : <span>salió <span style={{color:"#FF4B4B",fontWeight:700}}>{fmtM(s.exitedAt)}</span></span>
+                      }
+                      {" · "}<span style={{color:"#FFD700"}}>{fmtM(s.open?s.exitedAt-s.enteredAt:s.exitedAt-s.enteredAt)}</span>
+                    </span>
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:3}}>
+                  {p.goals>0&&<span style={{fontSize:11}}>⚽ {p.goals}</span>}
+                  {p.fCom>0&&<span style={{fontSize:11,color:"#ff7043"}}>falta com. {p.fCom}</span>}
+                  {p.fRec>0&&<span style={{fontSize:11,color:"#fff176"}}>falta rec. {p.fRec}</span>}
+                  {p.yel>0&&<span style={{fontSize:11,color:"#f9a825"}}>🟨×{p.yel}</span>}
+                  {p.red>0&&<span style={{fontSize:11,color:"#ef5350"}}>🟥×{p.red}</span>}
+                </div>
+              </div>
+            );
+          })}
+          <button style={{...C.btnPrimary,marginTop:6}} onClick={onClose}>Cerrar</button>
+        </div>
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
